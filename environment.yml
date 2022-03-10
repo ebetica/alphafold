@@ -153,6 +153,7 @@ dependencies:
   - zipp=3.5.0=pyhd8ed1ab_0
   - zlib=1.2.11=h7b6447c_3
   - pip:
+    - --find-links https://storage.googleapis.com/jax-releases/jax_releases.html
     - contextlib2==21.6.0
     - jaxlib==0.1.69+cuda101
     - ml-collections==0.1.0
