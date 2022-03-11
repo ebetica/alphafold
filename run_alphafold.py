@@ -73,7 +73,7 @@ flags.DEFINE_string('obsolete_pdbs_path', None, 'Path to file containing a '
                     'mapping from obsolete PDB IDs to the PDB IDs of their '
                     'replacements.')
 flags.DEFINE_enum('preset', 'full_dbs',
-                  ['reduced_dbs', 'full_dbs', 'casp14'],
+                  ['reduced_dbs', 'full_dbs', 'casp14', 'single_sequence'],
                   'Choose preset model configuration - no ensembling and '
                   'smaller genetic database config (reduced_dbs), no '
                   'ensembling and full genetic database config  (full_dbs) or '
@@ -224,7 +224,7 @@ def main(argv):
   _check_flag('uniclust30_database_path', FLAGS.preset,
               should_be_set=not use_small_bfd)
 
-  if FLAGS.preset in ('reduced_dbs', 'full_dbs'):
+  if FLAGS.preset in ('reduced_dbs', 'full_dbs', 'single_sequence'):
     num_ensemble = 1
   elif FLAGS.preset == 'casp14':
     num_ensemble = 8
@@ -253,7 +253,8 @@ def main(argv):
       small_bfd_database_path=FLAGS.small_bfd_database_path,
       pdb70_database_path=FLAGS.pdb70_database_path,
       template_featurizer=template_featurizer,
-      use_small_bfd=use_small_bfd)
+      use_small_bfd=use_small_bfd,
+      single_sequence=FLAGS.preset=='single_sequence')
 
   model_runners = {}
   for model_name in FLAGS.model_names:

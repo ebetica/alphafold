@@ -93,6 +93,7 @@ class DataPipeline:
                pdb70_database_path: str,
                template_featurizer: templates.TemplateHitFeaturizer,
                use_small_bfd: bool,
+               single_sequence: bool = False,
                mgnify_max_hits: int = 501,
                uniref_max_hits: int = 10000):
     """Constructs a feature dict for a given FASTA file."""
@@ -117,6 +118,7 @@ class DataPipeline:
     self.template_featurizer = template_featurizer
     self.mgnify_max_hits = mgnify_max_hits
     self.uniref_max_hits = uniref_max_hits
+    self.single_sequence = single_sequence
 
   def process(self, input_fasta_path: str, msa_output_dir: str) -> FeatureDict:
     """Runs alignment tools on the input sequence and creates features."""
@@ -129,6 +131,24 @@ class DataPipeline:
     input_sequence = input_seqs[0]
     input_description = input_descs[0]
     num_res = len(input_sequence)
+
+    if self.single_sequence:
+      templates_result = self.template_featurizer.get_templates(
+          query_sequence=input_sequence,
+          query_pdb_code=None,
+          query_release_date=None,
+          hits=[])
+
+      sequence_features = make_sequence_features(
+          sequence=input_sequence,
+          description=input_description,
+          num_res=num_res)
+
+      msa, delmat = parsers.parse_a3m(input_fasta_str)
+      msa_features = make_msa_features(
+          msas=[msa],
+          deletion_matrices=[delmat])
+      return {**sequence_features, **msa_features, **templates_result.features}
 
     jackhmmer_uniref90_result = self.jackhmmer_uniref90_runner.query(
         input_fasta_path)[0]
