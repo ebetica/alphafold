@@ -78,10 +78,10 @@ if [[ "$preset" == "" ]] ; then
     preset="full_dbs"
 fi
 
-if [[ "$preset" != "full_dbs" && "$preset" != "casp14" && "$preset" != "reduced_dbs" && "$preset" != "single_sequence" ]] ; then
-    echo "Unknown preset! Using default ('full_dbs')"
-    preset="full_dbs"
-fi
+# if [[ "$preset" != "full_dbs" && "$preset" != "casp14" && "$preset" != "reduced_dbs" && "$preset" != "single_sequence" ]] ; then
+    # echo "Unknown preset! Using default ('full_dbs')"
+    # preset="full_dbs"
+# fi
 
 # This bash script looks for the run_alphafold.py script in its current working directory, if it does not exist then exits
 current_working_dir=$(pwd)

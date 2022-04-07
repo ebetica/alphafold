@@ -73,7 +73,7 @@ flags.DEFINE_string('obsolete_pdbs_path', None, 'Path to file containing a '
                     'mapping from obsolete PDB IDs to the PDB IDs of their '
                     'replacements.')
 flags.DEFINE_enum('preset', 'full_dbs',
-                  ['reduced_dbs', 'full_dbs', 'casp14', 'single_sequence'],
+                  ['reduced_dbs', 'full_dbs', 'casp14', 'single_sequence', 'no_templates', 'no_metagenomics', 'no_templates_or_metagenomics'],
                   'Choose preset model configuration - no ensembling and '
                   'smaller genetic database config (reduced_dbs), no '
                   'ensembling and full genetic database config  (full_dbs) or '
@@ -224,9 +224,9 @@ def main(argv):
   _check_flag('uniclust30_database_path', FLAGS.preset,
               should_be_set=not use_small_bfd)
 
-  if FLAGS.preset in ('reduced_dbs', 'full_dbs', 'single_sequence'):
+  if FLAGS.preset != 'casp14':
     num_ensemble = 1
-  elif FLAGS.preset == 'casp14':
+  else:
     num_ensemble = 8
 
   # Check for duplicate FASTA file names.
@@ -254,7 +254,10 @@ def main(argv):
       pdb70_database_path=FLAGS.pdb70_database_path,
       template_featurizer=template_featurizer,
       use_small_bfd=use_small_bfd,
-      single_sequence=FLAGS.preset=='single_sequence')
+      single_sequence=FLAGS.preset=='single_sequence',
+      no_templates=FLAGS.preset in ("no_templates", "no_templates_or_metagenomics"),
+      no_metagenomics=FLAGS.preset in ("no_metagenomics", "no_templates_or_metagenomics"),
+  )
 
   model_runners = {}
   for model_name in FLAGS.model_names:

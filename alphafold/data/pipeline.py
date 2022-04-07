@@ -78,6 +78,17 @@ def make_msa_features(
   return features
 
 
+def _placeholder_template_feats(num_templates_, num_res_):
+    """https://github.com/sokrypton/ColabFold/blob/0a7b11137dda693263f2eebd8c83f7b91af301f0/colabfold/colabfold_alphafold.py#L534-L541"""
+    return {
+        'template_aatype': np.zeros([num_templates_, num_res_, 22], np.float32),
+        'template_all_atom_masks': np.zeros([num_templates_, num_res_, 37, 3], np.float32),
+        'template_all_atom_positions': np.zeros([num_templates_, num_res_, 37], np.float32),
+        'template_domain_names': np.zeros([num_templates_], np.float32),
+        'template_sum_probs': np.zeros([num_templates_], np.float32),
+    }
+
+
 class DataPipeline:
   """Runs the alignment tools and assembles the input features."""
 
@@ -95,7 +106,9 @@ class DataPipeline:
                use_small_bfd: bool,
                single_sequence: bool = False,
                mgnify_max_hits: int = 501,
-               uniref_max_hits: int = 10000):
+               uniref_max_hits: int = 10000,
+               no_templates: bool = False,
+               no_metagenomics: bool = False):
     """Constructs a feature dict for a given FASTA file."""
     self._use_small_bfd = use_small_bfd
     self.jackhmmer_uniref90_runner = jackhmmer.Jackhmmer(
@@ -119,6 +132,8 @@ class DataPipeline:
     self.mgnify_max_hits = mgnify_max_hits
     self.uniref_max_hits = uniref_max_hits
     self.single_sequence = single_sequence
+    self.no_templates = no_templates
+    self.no_metagenomics = no_metagenomics
 
   def process(self, input_fasta_path: str, msa_output_dir: str) -> FeatureDict:
     """Runs alignment tools on the input sequence and creates features."""
@@ -152,59 +167,64 @@ class DataPipeline:
 
     jackhmmer_uniref90_result = self.jackhmmer_uniref90_runner.query(
         input_fasta_path)[0]
-    jackhmmer_mgnify_result = self.jackhmmer_mgnify_runner.query(
-        input_fasta_path)[0]
-
     uniref90_msa_as_a3m = parsers.convert_stockholm_to_a3m(
         jackhmmer_uniref90_result['sto'], max_sequences=self.uniref_max_hits)
-    hhsearch_result = self.hhsearch_pdb70_runner.query(uniref90_msa_as_a3m)
-
     uniref90_out_path = os.path.join(msa_output_dir, 'uniref90_hits.sto')
     with open(uniref90_out_path, 'w') as f:
       f.write(jackhmmer_uniref90_result['sto'])
-
-    mgnify_out_path = os.path.join(msa_output_dir, 'mgnify_hits.sto')
-    with open(mgnify_out_path, 'w') as f:
-      f.write(jackhmmer_mgnify_result['sto'])
-
-    pdb70_out_path = os.path.join(msa_output_dir, 'pdb70_hits.hhr')
-    with open(pdb70_out_path, 'w') as f:
-      f.write(hhsearch_result)
-
     uniref90_msa, uniref90_deletion_matrix, _ = parsers.parse_stockholm(
         jackhmmer_uniref90_result['sto'])
-    mgnify_msa, mgnify_deletion_matrix, _ = parsers.parse_stockholm(
-        jackhmmer_mgnify_result['sto'])
-    hhsearch_hits = parsers.parse_hhr(hhsearch_result)
-    mgnify_msa = mgnify_msa[:self.mgnify_max_hits]
-    mgnify_deletion_matrix = mgnify_deletion_matrix[:self.mgnify_max_hits]
+    msas = (uniref90_msa,)
+    deletion_matrices = (uniref90_deletion_matrix,)
 
-    if self._use_small_bfd:
-      jackhmmer_small_bfd_result = self.jackhmmer_small_bfd_runner.query(
+    if not self.no_metagenomics:
+      jackhmmer_mgnify_result = self.jackhmmer_mgnify_runner.query(
           input_fasta_path)[0]
+      mgnify_out_path = os.path.join(msa_output_dir, 'mgnify_hits.sto')
+      with open(mgnify_out_path, 'w') as f:
+        f.write(jackhmmer_mgnify_result['sto'])
+      mgnify_msa, mgnify_deletion_matrix, _ = parsers.parse_stockholm(
+          jackhmmer_mgnify_result['sto'])
+      mgnify_msa = mgnify_msa[:self.mgnify_max_hits]
+      mgnify_deletion_matrix = mgnify_deletion_matrix[:self.mgnify_max_hits]
 
-      bfd_out_path = os.path.join(msa_output_dir, 'small_bfd_hits.a3m')
-      with open(bfd_out_path, 'w') as f:
-        f.write(jackhmmer_small_bfd_result['sto'])
+      if self._use_small_bfd:
+        jackhmmer_small_bfd_result = self.jackhmmer_small_bfd_runner.query(
+            input_fasta_path)[0]
 
-      bfd_msa, bfd_deletion_matrix, _ = parsers.parse_stockholm(
-          jackhmmer_small_bfd_result['sto'])
+        bfd_out_path = os.path.join(msa_output_dir, 'small_bfd_hits.a3m')
+        with open(bfd_out_path, 'w') as f:
+          f.write(jackhmmer_small_bfd_result['sto'])
+
+        bfd_msa, bfd_deletion_matrix, _ = parsers.parse_stockholm(
+            jackhmmer_small_bfd_result['sto'])
+      else:
+        hhblits_bfd_uniclust_result = self.hhblits_bfd_uniclust_runner.query(
+            input_fasta_path)
+
+        bfd_out_path = os.path.join(msa_output_dir, 'bfd_uniclust_hits.a3m')
+        with open(bfd_out_path, 'w') as f:
+          f.write(hhblits_bfd_uniclust_result['a3m'])
+
+        bfd_msa, bfd_deletion_matrix = parsers.parse_a3m(
+            hhblits_bfd_uniclust_result['a3m'])
+      msas = (uniref90_msa, bfd_msa, mgnify_msa)
+      deletion_matrices = (
+          uniref90_deletion_matrix, bfd_deletion_matrix, mgnify_deletion_matrix)
+
+    if not self.no_templates:
+      hhsearch_result = self.hhsearch_pdb70_runner.query(uniref90_msa_as_a3m)
+      pdb70_out_path = os.path.join(msa_output_dir, 'pdb70_hits.hhr')
+      with open(pdb70_out_path, 'w') as f:
+        f.write(hhsearch_result)
+      hhsearch_hits = parsers.parse_hhr(hhsearch_result)
     else:
-      hhblits_bfd_uniclust_result = self.hhblits_bfd_uniclust_runner.query(
-          input_fasta_path)
-
-      bfd_out_path = os.path.join(msa_output_dir, 'bfd_uniclust_hits.a3m')
-      with open(bfd_out_path, 'w') as f:
-        f.write(hhblits_bfd_uniclust_result['a3m'])
-
-      bfd_msa, bfd_deletion_matrix = parsers.parse_a3m(
-          hhblits_bfd_uniclust_result['a3m'])
-
+      hhsearch_hits = []
     templates_result = self.template_featurizer.get_templates(
-        query_sequence=input_sequence,
-        query_pdb_code=None,
-        query_release_date=None,
-        hits=hhsearch_hits)
+      query_sequence=input_sequence,
+      query_pdb_code=None,
+      query_release_date=None,
+      hits=hhsearch_hits)
 
     sequence_features = make_sequence_features(
         sequence=input_sequence,
@@ -212,14 +232,13 @@ class DataPipeline:
         num_res=num_res)
 
     msa_features = make_msa_features(
-        msas=(uniref90_msa, bfd_msa, mgnify_msa),
-        deletion_matrices=(uniref90_deletion_matrix,
-                           bfd_deletion_matrix,
-                           mgnify_deletion_matrix))
+        msas=msas,
+        deletion_matrices=deletion_matrices,)
 
     logging.info('Uniref90 MSA size: %d sequences.', len(uniref90_msa))
-    logging.info('BFD MSA size: %d sequences.', len(bfd_msa))
-    logging.info('MGnify MSA size: %d sequences.', len(mgnify_msa))
+    if not self.no_metagenomics:
+      logging.info('BFD MSA size: %d sequences.', len(bfd_msa))
+      logging.info('MGnify MSA size: %d sequences.', len(mgnify_msa))
     logging.info('Final (deduplicated) MSA size: %d sequences.',
                  msa_features['num_alignments'][0])
     logging.info('Total number of templates (NB: this can include bad '
