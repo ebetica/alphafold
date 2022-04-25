@@ -341,17 +341,16 @@ class AlphaFold(hk.Module):
           compute_loss=compute_loss,
           ensemble_representations=ensemble_representations)
 
+    emb_config = self.config.embeddings_and_evoformer
+    prev = {
+        'prev_pos': jnp.zeros(
+            [num_residues, residue_constants.atom_type_num, 3]),
+        'prev_msa_first_row': jnp.zeros(
+            [num_residues, emb_config.msa_channel]),
+        'prev_pair': jnp.zeros(
+            [num_residues, num_residues, emb_config.pair_channel]),
+    }
     if self.config.num_recycle:
-      emb_config = self.config.embeddings_and_evoformer
-      prev = {
-          'prev_pos': jnp.zeros(
-              [num_residues, residue_constants.atom_type_num, 3]),
-          'prev_msa_first_row': jnp.zeros(
-              [num_residues, emb_config.msa_channel]),
-          'prev_pair': jnp.zeros(
-              [num_residues, num_residues, emb_config.pair_channel]),
-      }
-
       if 'num_iter_recycling' in batch:
         # Training time: num_iter_recycling is in batch.
         # The value for each ensemble batch is the same, so arbitrarily taking
@@ -365,21 +364,28 @@ class AlphaFold(hk.Module):
         # Eval mode or tests: use the maximum number of iterations.
         num_iter = self.config.num_recycle
 
-      body = lambda x: (x[0] + 1,  # pylint: disable=g-long-lambda
-                        get_prev(do_call(x[1], recycle_idx=x[0],
-                                         compute_loss=False)))
+      def pw_dist(a):
+        a_norm = jnp.square(a).sum(-1)
+        return jnp.sqrt(jnp.abs(a_norm[:,None] + a_norm[None,:] - 2 * a @ a.T))
+
+      def body(x):
+        n, tol, prev = x
+        prev_ = get_prev(do_call(prev, recycle_idx=n, compute_loss=False))
+        ca,ca_ = prev["prev_pos"][:,1,:], prev_["prev_pos"][:,1,:]
+        tol_ = jnp.sqrt(jnp.square(pw_dist(ca) - pw_dist(ca_)).mean())
+        return n+1, tol_, prev_
+
       if hk.running_init():
         # When initializing the Haiku module, run one iteration of the
         # while_loop to initialize the Haiku modules used in `body`.
-        _, prev = body((0, prev))
+        recycles, tol, prev = body((0, jnp.inf, prev))
       else:
-        _, prev = hk.while_loop(
-            lambda x: x[0] < num_iter,
-            body,
-            (0, prev))
+        recycles, tol, prev = hk.while_loop(
+          lambda x: ((x[0] < num_iter) & (x[1] > self.config.recycle_tol)),
+          body,(0, jnp.inf, prev))
     else:
-      prev = {}
       num_iter = 0
+      (recycles,tol) = 0, jnp.inf
 
     ret = do_call(prev=prev, recycle_idx=num_iter)
     if compute_loss:
@@ -387,7 +393,7 @@ class AlphaFold(hk.Module):
 
     if not return_representations:
       del (ret[0] if compute_loss else ret)['representations']  # pytype: disable=unsupported-operands
-    return ret
+    return ret, (recycles,tol)
 
 
 class TemplatePairStack(hk.Module):
@@ -1730,9 +1736,7 @@ class EmbeddingsAndEvoformer(hk.Module):
                                           True,
                                           name='prev_msa_first_row_norm')(
                                               batch['prev_msa_first_row'])
-        msa_activations = jax.ops.index_add(msa_activations, 0,
-                                            prev_msa_first_row)
-
+        msa_activations = msa_activations.at[0].add(prev_msa_first_row)
       if 'prev_pair' in batch:
         pair_activations += hk.LayerNorm([-1],
                                          True,
