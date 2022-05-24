@@ -269,10 +269,11 @@ def from_prediction(
   if b_factors is None:
     b_factors = np.zeros_like(fold_output['final_atom_mask'])
 
+  L = features['seq_length'][0]
   return Protein(
-      aatype=_maybe_remove_leading_dim(features['aatype']),
-      atom_positions=fold_output['final_atom_positions'],
-      atom_mask=fold_output['final_atom_mask'],
-      residue_index=_maybe_remove_leading_dim(features['residue_index']) + 1,
-      chain_index=chain_index,
-      b_factors=b_factors)
+      aatype=_maybe_remove_leading_dim(features['aatype'])[:L],
+      atom_positions=fold_output['final_atom_positions'][:L],
+      atom_mask=fold_output['final_atom_mask'][:L],
+      residue_index=_maybe_remove_leading_dim(features['residue_index'])[:L] + 1,
+      chain_index=chain_index[:L],
+      b_factors=b_factors[:L])

@@ -18,6 +18,7 @@ from alphafold.model.tf import data_transforms
 from alphafold.model.tf import shape_placeholders
 import tensorflow.compat.v1 as tf
 import tree
+import numpy as np
 
 # Pylint gets confused by the curry1 decorator because it changes the number
 #   of arguments to the function.
@@ -114,7 +115,7 @@ def ensembled_map_fns(data_config):
         crop_feats,
         pad_msa_clusters,
         common_cfg.max_extra_msa,
-        eval_cfg.crop_size,
+        2 ** (int(np.ceil(np.log2(eval_cfg.crop_size)))),
         eval_cfg.max_templates))
   else:
     map_fns.append(data_transforms.crop_templates(eval_cfg.max_templates))
