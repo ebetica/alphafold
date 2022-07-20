@@ -182,15 +182,25 @@ def predict_structure(
 
     # Relax the prediction.
     t_0 = time.time()
-    relaxed_pdb_str, _, _ = amber_relaxer.process(prot=unrelaxed_protein)
-    timings[f'relax_{model_name}'] = time.time() - t_0
+    try:
+        relaxed_pdb_str, _, _ = amber_relaxer.process(prot=unrelaxed_protein)
+        timings[f'relax_{model_name}'] = time.time() - t_0
 
-    relaxed_pdbs[model_name] = relaxed_pdb_str
+        relaxed_pdbs[model_name] = relaxed_pdb_str
 
-    # Save the relaxed PDB.
-    relaxed_output_path = os.path.join(output_dir, f'relaxed_{model_name}.pdb')
-    with open(relaxed_output_path, 'w') as f:
-      f.write(relaxed_pdb_str)
+        # Save the relaxed PDB.
+        relaxed_output_path = os.path.join(output_dir, f'relaxed_{model_name}.pdb')
+        with open(relaxed_output_path, 'w') as f:
+            f.write(relaxed_pdb_str)
+    except ValueError:
+        relaxed_pdb_str = protein.to_pdb(unrelaxed_protein)
+        relaxed_pdbs[model_name] = relaxed_pdb_str
+
+        # Save the relaxed PDB.
+        relaxed_output_path = os.path.join(output_dir, f'relaxed-failed_{model_name}.pdb')
+        with open(relaxed_output_path, 'w') as f:
+            f.write(relaxed_pdb_str)
+
 
   # Rank by pLDDT and write out relaxed PDBs in rank order.
   ranked_order = []
